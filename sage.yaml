@@ -1,0 +1,15 @@
+name: "speech-redaction"
+version: "0.1.0"
+description: "Removes human speech from node audio before it is persisted, so acoustic monitoring can continue without recording people"
+keywords: "audio, privacy, speech, redaction, YAMnet, acoustic monitoring"
+authors: "Miguel Hernandez <miguelhernandez2028@u.northwestern.edu>"
+collaborators: "Pete Beckman"
+funding: "NSF 2331263, NSF 2436842"
+license: "MIT"
+homepage: "https://github.com/Miguel-Hernandez1/speech-redaction"
+source:
+  architectures:
+    - "linux/arm64"
+  url: "https://github.com/Miguel-Hernandez1/speech-redaction.git"
+  branch: "main"
+
