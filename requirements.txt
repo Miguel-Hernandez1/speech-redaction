@@ -2,4 +2,4 @@
 pywaggle==0.56.0
 numpy
 soundfile
-ai-edge-litert
+ai-edge-litert==2.1.6
