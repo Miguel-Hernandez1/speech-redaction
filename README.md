@@ -9,6 +9,25 @@ zeroes the speech regions in memory, and writes a redacted audio product
 back into the cache for downstream plugins to consume. The raw, unredacted
 audio is never written to disk.
 
+## How it works
+
+```mermaid
+flowchart LR
+  A["read audio from<br/>local cache"] --> B["detect speech<br/>with YAMNet"]
+  B --> C["zero the speech<br/>regions in memory"]
+  C --> D["write redacted product<br/>back to local cache"]
+```
+
+The speech regions are zeroed while the audio is still an in-memory array, so
+the raw, unredacted audio is never written to disk.
+
+## What it looks like
+
+![Before and after: human speech is detected and zeroed while the surrounding soundscape is preserved](ecr-meta/ecr-science-image.jpg)
+
+Top: the original audio, with human speech present. Bottom: the redacted
+output, with the speech zeroed and the surrounding soundscape left intact.
+
 ## Usage
 
     # single file (dev/test)
