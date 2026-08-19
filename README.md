@@ -9,7 +9,7 @@ zeroes the speech regions in memory, and writes a redacted audio product
 back into the cache for downstream plugins to consume. The raw, unredacted
 audio is never written to disk.
 
-The standalone speech-redaction plugin built in this internship is live in the Sage app catalog at portal.sagecontinuum.org/apps/app/mighdz/speech-redaction
+The standalone speech-redaction plugin built in this internship is live in the Sage app catalog at [(portal.sagecontinuum.org/apps/app/mighdz/speech-redaction)]
 
 
 ## How it works
