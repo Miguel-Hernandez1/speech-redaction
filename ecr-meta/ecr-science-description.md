@@ -16,8 +16,8 @@ reason land managers are often reluctant to allow always-on audio recording in
 public spaces at all.
 
 This plugin exists to solve that problem directly; its job is to remove human
-speech from the audio at the edge, on the node itself, before the recording is
-ever saved or sent anywhere. And the result is audio that still contains the
+speech from the audio at the edge, on the node itself, before any of that audio
+is uploaded or sent off the node. And the result is audio that still contains the
 birdsong and the natural soundscape that scientists want, but with human
 speech erased. This means that the science can continue, and the people walking past are not
 recorded.
@@ -36,12 +36,20 @@ guarantee that no human speech is kept.
 
 ## How It Works
 
-The plugin treats speech removal as something that must happen before the
-audio is stored, not after. This ordering is the heart of the design. If
-speech were filtered out only after a recording had already been written to
-disk, the private audio would have existed, however briefly, in a saved file.
-By redacting while the audio is still held in memory, the plugin ensures that
-a recording containing raw human speech is never written at all.
+The plugin treats speech removal as something that must happen while the audio
+is still held in memory, before this plugin writes or forwards anything. This
+ordering is the heart of the design. The plugin reads each captured clip from
+the node's local cache, erases the speech from the in-memory array, and only
+then writes the redacted result back out. Because of that, the product this
+plugin produces, and anything downstream of it or uploaded from it, never
+contains raw human speech.
+
+There is one honest caveat about the current deployment. The raw clips do reach
+the node's SSD first, because the upstream producer, media-sampler3, writes them
+to the local cache and this plugin reads them from there. So raw audio does
+exist on disk briefly, on the node itself, before redaction runs. A move to a
+ramdisk is planned, so that the raw clips would live only in volatile memory and
+never be written to persistent storage.
 
 Detection is handled by YAMNet, a general-purpose audio classifier that scores
 short frames of audio for how much they sound like speech. Those scores are
