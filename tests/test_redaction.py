@@ -163,6 +163,128 @@ def test_redact_speech_fail_closed_on_empty_scores(monkeypatch):
     assert "no classification scores" in reason.lower()
 
 
+def test_redact_speech_ceil_captures_tail_sample(monkeypatch):
+    """Off-by-one fix: a window whose end lands on a fractional sample must be
+    ceil'd so the last partial sample of speech is zeroed, not truncated away."""
+    import redaction.apply
+    monkeypatch.setattr(redaction.apply, "speech_scores",
+                        _fake_speech_scores_factory([0.0, 0.9, 0.0]))
+    # post_roll 0.0005s pushes the window end to 2.0005s; at 1000 Hz that is
+    # sample 2000.5 -> ceil 2001, so sample index 2000 must be zeroed (int() would
+    # have truncated to 2000 and left it).
+    gate = RedactionGate(enter_threshold=0.5, exit_threshold=0.3,
+                         pre_roll_seconds=0.0, hangover_seconds=0.0,
+                         post_roll_seconds=0.0005, frame_hop=1.0, frame_duration=1.0)
+    audio = np.ones(3000, dtype=np.float32) * 0.5
+    redacted, windows, reason = redact_speech(audio, 1000, gate=gate)
+    assert reason is None
+    assert len(windows) == 1 and windows[0][0] == 1.0
+    assert redacted[2000] == 0.0     # ceil captured this tail sample
+    assert redacted[999] == 0.5      # floor left the pre-window sample intact
+    assert redacted[2001] == 0.5     # audio past ceil(end) untouched
+
+
+def test_redact_speech_noise_fill_matches_surrounding_level(monkeypatch):
+    """noise_fill=True writes non-zero audio into the window at roughly the level
+    of the surrounding audio (constant 0.3 -> RMS ~0.3), not silence."""
+    import redaction.apply
+    # frame 2 active -> window (2.0, 3.0) -> samples [2000, 3000) at 1000 Hz.
+    monkeypatch.setattr(redaction.apply, "speech_scores",
+                        _fake_speech_scores_factory([0.0, 0.0, 0.9, 0.0, 0.0]))
+    gate = RedactionGate(enter_threshold=0.5, exit_threshold=0.3,
+                         pre_roll_seconds=0.0, hangover_seconds=0.0,
+                         post_roll_seconds=0.0, frame_hop=1.0, frame_duration=1.0)
+    audio = np.full(5000, 0.3, dtype=np.float32)  # constant 0.3 => RMS 0.3
+    redacted, windows, reason = redact_speech(audio, 1000, gate=gate, noise_fill=True)
+    assert reason is None
+    assert windows == [(2.0, 3.0)]
+    filled = redacted[2000:3000]
+    assert np.any(filled != 0.0)               # noise, not zeros
+    assert not np.allclose(filled, filled[0])  # actually varying (noise, not a constant)
+    fill_rms = float(np.sqrt(np.mean(filled.astype(np.float64) ** 2)))
+    assert 0.15 < fill_rms < 0.45              # ~ surrounding level 0.3
+
+
+def test_redact_speech_noise_fill_is_two_pass_measures_original_audio(monkeypatch):
+    """Prove the noise fill measures levels in a FIRST pass, before ANY window is
+    written. Two windows sit within one guard region of each other; window one
+    originally holds LOUD audio in otherwise-quiet ambient.
+
+    - Two passes (correct): window two's guard overlaps window one's ORIGINAL
+      loud samples, so window two's fill comes out clearly elevated.
+    - One pass (buggy): window one would already be filled down to the ambient
+      level, so window two would measure ~ambient and fill quiet.
+
+    A constant-level buffer canNOT distinguish the two (window one's fill equals
+    the ambient it was measured from, so a one-pass read of it is identical), so
+    the loud original window is what makes the ordering observable.
+    """
+    from redaction.apply import _NOISE_MEASURE_SECONDS
+    import redaction.apply
+
+    sr = 1000
+    guard = int(_NOISE_MEASURE_SECONDS * sr)  # 100 samples
+
+    # frames 20 and 22 active (frame 21 silent) with hop=dur=0.01 and no padding
+    # -> windows (0.20, 0.21) and (0.22, 0.23) -> samples [200,210) and [220,230).
+    scores = [0.0] * 25
+    scores[20] = 0.9
+    scores[22] = 0.9
+    monkeypatch.setattr(redaction.apply, "speech_scores",
+                        _fake_speech_scores_factory(scores))
+    gate = RedactionGate(enter_threshold=0.5, exit_threshold=0.3,
+                         pre_roll_seconds=0.0, hangover_seconds=0.0,
+                         post_roll_seconds=0.0, frame_hop=0.01, frame_duration=0.01)
+
+    ambient = 0.3
+    audio = np.full(600, ambient, dtype=np.float32)
+    audio[200:210] = 3.0  # window one originally LOUD (real speech), quiet ambient
+
+    # Precondition: the gap between the windows is inside one guard region, so a
+    # one-pass fill of window one WOULD pollute window two's measurement.
+    gap_samples = 220 - 210
+    assert gap_samples < guard
+
+    redacted, windows, reason = redact_speech(audio, sr, gate=gate, noise_fill=True)
+    assert reason is None
+    assert len(windows) == 2  # two separate windows (float boundaries ~0.20..0.23)
+    assert windows[0][0] == pytest.approx(0.20) and windows[0][1] == pytest.approx(0.21)
+    assert windows[1][0] == pytest.approx(0.22) and windows[1][1] == pytest.approx(0.23)
+
+    def _rms(x):
+        return float(np.sqrt(np.mean(x.astype(np.float64) ** 2)))
+
+    fill1_rms = _rms(redacted[200:210])
+    fill2_rms = _rms(redacted[220:230])
+
+    # Window one fills to ~ambient (its own guard is all ambient); its loud
+    # original is destroyed.
+    assert 0.2 < fill1_rms < 0.4
+    # Window two's fill is ELEVATED because the two-pass measurement read window
+    # one's ORIGINAL loud samples. A one-pass implementation would give ~ambient
+    # here (~0.3) and fail this assertion; the analytic two-pass value is ~0.73.
+    assert fill2_rms > 0.5
+    assert fill2_rms > fill1_rms * 1.5
+
+
+def test_redact_speech_fail_closed_noise_fills_whole_buffer(monkeypatch):
+    """Fail-closed with noise_fill=True: the WHOLE buffer is overwritten with
+    noise at the pre-fill level (no raw sample survives) and a reason is set."""
+    def _raising(audio_1d, samplerate, include_ambiguous=False):
+        raise yamnet_speech.RedactionFailure("boom")
+    import redaction.apply
+    monkeypatch.setattr(redaction.apply, "speech_scores", _raising)
+    audio = np.full(16000, 0.5, dtype=np.float32)  # 1.0s @ 16k, constant 0.5
+    redacted, windows, reason = redact_speech(audio, 16000, gate=RedactionGate(),
+                                              noise_fill=True)
+    assert reason is not None and "boom" in reason
+    assert windows == [(0.0, 1.0)]              # whole buffer
+    assert not np.allclose(redacted, 0.5)       # raw audio destroyed
+    assert np.any(redacted != 0.0)              # filled with noise, not zeros
+    rms = float(np.sqrt(np.mean(redacted.astype(np.float64) ** 2)))
+    assert 0.3 < rms < 0.7                       # ~ pre-fill level 0.5
+
+
 def test_redact_speech_no_speech_leaves_buffer_untouched(monkeypatch):
     """Success path with NO speech detected: windows is [], reason is None, and
     the buffer is NOT modified — that's correct (ambient audio, no redaction)."""
