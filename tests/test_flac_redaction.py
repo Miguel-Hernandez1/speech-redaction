@@ -78,5 +78,44 @@ def test_write_redacted_flac_stores_fail_closed_reason(tmp_path, monkeypatch):
     assert tags[REDACTION_REASON_FIELD][0] == reason
 
 
+def test_write_redacted_flac_preserves_24bit_source_subtype(tmp_path, monkeypatch):
+    """A 24-bit (PCM_24) source round-trips as 24-bit when the caller passes the
+    source's sf.info(path).subtype through. media-sampler3's clips are 24-bit
+    FLAC; the PCM_16 default would silently drop 8 bits."""
+    import soundfile as sf
+
+    # Build a 24-bit FLAC "source" and recover its subtype the way a real caller
+    # would, via sf.info(path).subtype.
+    src = str(tmp_path / "source.flac")
+    src_audio = ((np.arange(4000, dtype=np.float32) % 100) - 50) / 100.0
+    sf.write(src, src_audio, 16000, format="FLAC", subtype="PCM_24")
+    src_subtype = sf.info(src).subtype
+    assert src_subtype == "PCM_24"
+
+    # No speech -> redaction leaves the buffer as-is; the subtype is the point.
+    monkeypatch.setattr(redaction.apply, "speech_scores",
+                        _fake_scores([0.0, 0.0, 0.0]))
+    audio, sr = sf.read(src, dtype="float32")
+    out = str(tmp_path / "redacted.flac")
+
+    ret_path, windows, reason = write_redacted_flac(audio, sr, out, subtype=src_subtype)
+
+    assert reason is None
+    assert sf.info(out).subtype == "PCM_24"  # preserved, not downgraded to PCM_16
+
+
+def test_write_redacted_flac_defaults_to_pcm16_when_subtype_unknown(tmp_path, monkeypatch):
+    """With no subtype passed (source unknown), PCM_16 is the fallback."""
+    import soundfile as sf
+    monkeypatch.setattr(redaction.apply, "speech_scores",
+                        _fake_scores([0.0, 0.0, 0.0]))
+    audio = np.ones(4000, dtype=np.float32) * 0.1
+    out = str(tmp_path / "default.flac")
+
+    write_redacted_flac(audio, 16000, out)  # no subtype argument
+
+    assert sf.info(out).subtype == "PCM_16"
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
