@@ -13,3 +13,43 @@ source:
   url: "https://github.com/Miguel-Hernandez1/speech-redaction.git"
   branch: "main"
 
+# NOTE: ECR input types support ONLY "string" and "int". Boolean flags
+# (--all-unseen, --noise-fill, --dry-run) are declared "string" and are
+# presence-based: include them in a job's args list to enable, omit to disable.
+inputs:
+- id: "source"
+  type: "string"
+- id: "input"
+  type: "string"
+- id: "output-cache"
+  type: "string"
+- id: "cache-root"
+  type: "string"
+- id: "every"
+  type: "string"
+- id: "select-every"
+  type: "string"
+- id: "all-unseen"
+  type: "string"
+- id: "max-frames"
+  type: "int"
+- id: "consumer-id"
+  type: "string"
+- id: "seen-store"
+  type: "string"
+- id: "seen-max"
+  type: "int"
+- id: "output-source"
+  type: "string"
+- id: "cache-max-count"
+  type: "int"
+- id: "cache-max-mb"
+  type: "int"
+- id: "noise-fill"
+  type: "string"
+- id: "dry-run"
+  type: "string"
+
+metadata:
+  ontology: env.speechredaction.*
+
