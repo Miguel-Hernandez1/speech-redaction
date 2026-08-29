@@ -302,5 +302,40 @@ def test_redact_speech_no_speech_leaves_buffer_untouched(monkeypatch):
     assert redacted.sum() == pre_sum  # untouched — ambient preserved
 
 
+def test_model_path_is_repo_relative_not_parent_of_repo():
+    """Bug 1: the resolver must look for the model inside the repo's own models/
+    dir, not one directory up (the parent of the repo). Running from a bare clone
+    at .../speech-redaction, the model is at .../speech-redaction/models/, and the
+    old hardcoded .../AI-Projects/models/ pointed at the parent."""
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(yamnet_speech.__file__)))
+    expected = os.path.join(repo_root, "models", "yamnet.tflite")
+    assert expected in yamnet_speech._YAMNET_TFLITE_PATHS   # inside the repo
+    # regression: the parent-of-repo path (the old off-by-one) must NOT be used.
+    parent_of_repo = os.path.dirname(repo_root)
+    buggy = os.path.join(parent_of_repo, "models", "yamnet.tflite")
+    assert buggy not in yamnet_speech._YAMNET_TFLITE_PATHS
+
+
+def test_missing_ai_edge_litert_fails_closed(tmp_path, monkeypatch):
+    """Bug 2: a missing ai_edge_litert must fail closed (zero the buffer with a
+    reason naming the package), not crash the batch with ModuleNotFoundError."""
+    # Point the resolver at a real (dummy) file so we get PAST the missing-file
+    # check and reach the deferred import inside _load_model.
+    dummy = tmp_path / "yamnet.tflite"
+    dummy.write_bytes(b"not a real model")
+    monkeypatch.setattr(yamnet_speech, "YAMNET_TFLITE_PATH", str(dummy))
+    monkeypatch.setattr(yamnet_speech, "_interp", None)          # force a fresh load
+    monkeypatch.setattr(yamnet_speech, "_interp_model_path", None)
+    # Simulate the package being absent even if it happens to be installed here.
+    monkeypatch.setitem(sys.modules, "ai_edge_litert", None)
+    monkeypatch.setitem(sys.modules, "ai_edge_litert.interpreter", None)
+
+    audio = np.ones(16000, dtype=np.float32) * 0.5              # 1.0s @ 16k
+    redacted, windows, reason = redact_speech(audio, 16000)     # must NOT raise
+    assert reason is not None and "ai_edge_litert" in reason
+    assert redacted.sum() == 0.0                                 # failed closed
+    assert windows == [(0.0, 1.0)]                              # whole buffer
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

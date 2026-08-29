@@ -26,32 +26,35 @@ from .speech_classes import speech_score
 YAMNET_SAMPLE_RATE = 16000
 
 # Resolve the .tflite path once. Env override takes precedence; then the path
-# baked into the plugin image (see Dockerfile); then the persistent dev
-# location (survives reboots on a bare-metal Thor); then the dev scratch
-# location used during early validation. The persistent path is ahead of /tmp
-# so a dev Thor that has neither env override nor a Dockerfile-baked model
-# still lands on the reboot-persistent copy rather than the volatile one: see
-# REDACTION-INTEGRATION-NOTES.md §3 "Reboot persistence of the .tflite".
+# baked into the plugin image (see Dockerfile); then the model shipped in the
+# repo's own models/ dir (the bare-clone case); then the dev scratch location
+# used during early validation. The repo-relative path is ahead of /tmp so a
+# bare clone that has neither env override nor a Dockerfile-baked model still
+# lands on its own committed copy rather than the volatile one.
 #
-# NOTE: literal absolute paths, not `~` expansion. On a Sage plugin container
-# AND in dev sandboxes where HOME is not /home/mighdz, os.path.expanduser("~")
-# would resolve to the wrong home and the file would never be found. Coded
-# against the known real path; for any other dev machine, set
-# BIRDNET_YAMNET_TFLITE.
+# The repo-relative path is COMPUTED from this file's location, not hardcoded.
+# This file is <repo>/redaction/yamnet_speech.py, so the repo root is two
+# directories up and the model is <repo>/models/yamnet.tflite. The old hardcoded
+# "/home/mighdz/AI-Projects/models/yamnet.tflite" was off by one directory: it
+# pointed at the PARENT of the repo, so a bare clone at
+# /home/mighdz/AI-Projects/speech-redaction never found its own model (masked in
+# the container only because /app/models/ is also on the list). abspath(__file__)
+# is used rather than `~` expansion so it stays correct regardless of HOME.
 #
 # NOTE: existence-filtered, NOT an `or` chain. A bare
 #   `env.get(...) or "/app/models/..." or "/tmp/..."`
 # returns the first truthy string unconditionally: "/app/models/yamnet.tflite"
-# is non-empty even on a dev Thor where that file does NOT exist, so the chain
-# would resolve to a non-existent /app/models/ path and never fall through to
-# /tmp/. Filter by os.path.exists so the chain reflects where the model
-# actually is. _load_model still raises FileNotFoundError below if every
-# path misses.
+# is non-empty even where that file does NOT exist, so the chain would resolve to
+# a non-existent /app/models/ path and never fall through. Filter by
+# os.path.exists so the chain reflects where the model actually is. _load_model
+# still raises FileNotFoundError below if every path misses.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 _YAMNET_TFLITE_PATHS = [
-    os.environ.get("BIRDNET_YAMNET_TFLITE"),        # highest precedence
-    "/app/models/yamnet.tflite",                     # plugin container (Dockerfile COPY)
-    "/home/mighdz/AI-Projects/models/yamnet.tflite", # persistent dev (survives reboots)
-    "/tmp/yamnet.tflite",                            # volatile dev/validation scratch
+    os.environ.get("BIRDNET_YAMNET_TFLITE"),              # highest precedence
+    "/app/models/yamnet.tflite",                          # plugin container (Dockerfile COPY)
+    os.path.join(_REPO_ROOT, "models", "yamnet.tflite"),  # repo-relative (bare clone)
+    "/tmp/yamnet.tflite",                                 # volatile dev/validation scratch
 ]
 YAMNET_TFLITE_PATH = next(
     (p for p in _YAMNET_TFLITE_PATHS if p and os.path.exists(p)), None
@@ -144,6 +147,15 @@ def speech_scores(audio_1d, samplerate: int, include_ambiguous: bool = False) ->
         interp = _load_model()
     except FileNotFoundError as e:
         raise RedactionFailure(str(e)) from e
+    except ImportError as e:
+        # The runtime package (ai_edge_litert) is not installed, so the deferred
+        # import in _load_model failed. Route it through the SAME fail-closed
+        # path as a missing model file rather than letting ModuleNotFoundError
+        # abort the batch. Name the package so a missing dependency is obvious.
+        raise RedactionFailure(
+            f"ai_edge_litert is not installed, cannot run YAMNet ({e}). Install "
+            f"ai-edge-litert on this host or run inside the plugin container."
+        ) from e
 
     try:
         in_det = interp.get_input_details()[0]
