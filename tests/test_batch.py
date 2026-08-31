@@ -62,14 +62,15 @@ def test_dedup_across_runs_on_real_fixture(tmp_path, monkeypatch):
     assert processed == 5 and skipped == 0
 
     out = str(tmp_path / "out")
-    flacs = sorted(n for n in os.listdir(out) if n.endswith(".flac"))
-    jsons = sorted(n for n in os.listdir(out) if n.endswith(".json"))
+    stream = os.path.join(out, "redacted_audio", "hummingcam_mic_redacted")
+    flacs = sorted(n for n in os.listdir(stream) if n.endswith(".flac"))
+    jsons = sorted(n for n in os.listdir(stream) if n.endswith(".json"))
     assert len(flacs) == 5 and len(jsons) == 5
     # source label changed, capture_ts + vsn preserved, 24-bit preserved.
     assert all("-v2-H00F-hummingcam_mic_redacted.flac" in n for n in flacs)
-    assert sf.info(os.path.join(out, flacs[0])).subtype == "PCM_24"
+    assert sf.info(os.path.join(stream, flacs[0])).subtype == "PCM_24"
     # provenance recorded.
-    sc = json.load(open(os.path.join(out, jsons[0])))
+    sc = json.load(open(os.path.join(stream, jsons[0])))
     assert sc["source_unique_id"] and sc["source"] == "hummingcam_mic_redacted"
 
     # Second run: nothing reprocessed (durable seen-store).
@@ -104,6 +105,6 @@ def test_clip_vanishes_mid_run(tmp_path, monkeypatch):
     processed, skipped = main.process_batch(_args(tmp_path, str(src)))
     assert processed == 1 and skipped == 1        # 200 processed, 100 skipped, no crash
 
-    out = str(tmp_path / "out")
-    flacs = [n for n in os.listdir(out) if n.endswith(".flac")]
+    stream = os.path.join(str(tmp_path / "out"), "redacted_audio", "hummingcam_mic_redacted")
+    flacs = [n for n in os.listdir(stream) if n.endswith(".flac")]
     assert flacs == ["200-v2-H00F-hummingcam_mic_redacted.flac"]

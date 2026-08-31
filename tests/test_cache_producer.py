@@ -105,6 +105,25 @@ def test_fail_closed_reason_recorded_in_sidecar(tmp_path, monkeypatch):
     assert "model missing" in sc["redaction_fail_closed_reason"]
 
 
+def test_product_written_under_redacted_audio_source_tree(tmp_path, monkeypatch):
+    """Products land in <output-cache>/redacted_audio/<source>/, not flat in the
+    root, mirroring media-sampler3's per-stream layout."""
+    monkeypatch.setattr(redaction.apply, "speech_scores", _no_speech)
+    out = str(tmp_path / "out")
+    audio = np.zeros(16000, dtype=np.float32)
+    clip, sidecar, uid, windows, reason = cache_producer.write_product(
+        out, 12345, "H00F", "hummingcam_mic_redacted", audio, 16000, "PCM_24",
+        _src_sidecar(), "srcuid", "speech-redaction")
+
+    expected_dir = os.path.join(out, "redacted_audio", "hummingcam_mic_redacted")
+    assert cache_producer.stream_dir(out, "hummingcam_mic_redacted") == expected_dir
+    assert os.path.dirname(clip) == expected_dir      # clip is under the source tree
+    assert os.path.dirname(sidecar) == expected_dir
+    assert os.path.isfile(clip) and os.path.isfile(sidecar)
+    # nothing was written flat into the output-cache root
+    assert not any(n.endswith(".flac") for n in os.listdir(out))
+
+
 def test_output_ring_evicts_oldest_pair(tmp_path, monkeypatch):
     monkeypatch.setattr(redaction.apply, "speech_scores", _no_speech)
     out = str(tmp_path / "out")
@@ -114,7 +133,8 @@ def test_output_ring_evicts_oldest_pair(tmp_path, monkeypatch):
         cache_producer.write_product(
             out, ts, "H00F", "mic_redacted", audio, 16000, "PCM_24",
             _src_sidecar(ts=ts), f"src{ts}", "speech-redaction", max_count=2)
-    remaining = sorted(n for n in os.listdir(out) if n.endswith(".flac"))
+    stream = cache_producer.stream_dir(out, "mic_redacted")   # per-source ring
+    remaining = sorted(n for n in os.listdir(stream) if n.endswith(".flac"))
     assert remaining == ["2-v2-H00F-mic_redacted.flac", "3-v2-H00F-mic_redacted.flac"]
-    assert not os.path.exists(os.path.join(out, "1-v2-H00F-mic_redacted.flac"))
-    assert not os.path.exists(os.path.join(out, "1-v2-H00F-mic_redacted.flac.json"))
+    assert not os.path.exists(os.path.join(stream, "1-v2-H00F-mic_redacted.flac"))
+    assert not os.path.exists(os.path.join(stream, "1-v2-H00F-mic_redacted.flac.json"))
