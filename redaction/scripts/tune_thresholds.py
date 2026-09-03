@@ -24,8 +24,8 @@ scatter is also written to ``--plot PATH`` (default: recall_vs_threshold.png
 in the CWD). If matplotlib is NOT available, the script prints a one-line skip
 and still exits 0: the table is the primary output.
 
-Does NOT modify any redaction module. ``redaction_gate`` is imported UNMODIFIED
-from notes-ref (same import pattern as ``run_redaction_on_capture.py``).
+Does NOT modify any redaction module. ``redaction_gate`` is this repo's own
+redaction package (same import pattern as ``run_redaction_on_capture.py``).
 """
 import argparse
 import os
@@ -36,20 +36,20 @@ import numpy as np
 
 # Reuse the LiteRT scoring front-end + WAV loader from the sibling script
 # (speech_scores_lithert: same YAMNet .tflite path + _prepare_waveform logic).
-# The sibling script's NOTES_REDACTION sys.path.insert also re-exports
-# `redaction_gate` and `speech_classes`: so importing it as a module buys us
-# all of those, plus keeps a single source of truth for the scoring path.
+# The sibling script's repo-root sys.path.insert also makes this repo's own
+# `redaction` package importable: so importing it as a module buys us that,
+# plus keeps a single source of truth for the scoring path.
 _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE))
 from run_redaction_on_capture import (  # noqa: E402
     speech_scores_lithert, load_wav_mono, YAMNET_TFLITE,
 )
 
-# notes-ref RedactionGate (imported unchanged): already on sys.path via the
-# sibling script's NOTES_REDACTION insert. Import lazily so `--help` works
-# even when the .tflite / notes-ref path is missing.
+# This repo's own RedactionGate: already importable via the sibling script's
+# repo-root sys.path insert. Import lazily so `--help` works even when the
+# .tflite / model path is missing.
 def _gate_cls():
-    from redaction_gate import RedactionGate  # noqa: E402
+    from redaction.redaction_gate import RedactionGate  # noqa: E402
     return RedactionGate
 
 

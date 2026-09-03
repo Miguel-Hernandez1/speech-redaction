@@ -22,7 +22,7 @@ Why this uses a LiteRT adapter instead of notes-ref yamnet_speech.py directly:
   path (REDACTION-INTEGRATION-NOTES.md §2-3) is the YAMNet .tflite run via
   `ai_edge_litert.interpreter.Interpreter`. This script provides a drop-in
   `speech_scores()` that mirrors the notes' public API but uses LiteRT.
-  `RedactionGate` and `speech_classes` are imported UNMODIFIED from notes-ref.
+  `RedactionGate` and `speech_classes` are this repo's own redaction package.
 """
 import argparse
 import os
@@ -30,11 +30,11 @@ import sys
 
 import numpy as np
 
-# notes-ref redaction modules: imported unchanged
-NOTES_REDACTION = "/home/mighdz/AI-Projects/notes-ref/code/redaction"
-sys.path.insert(0, NOTES_REDACTION)
-from redaction_gate import RedactionGate, RedactionGateFailure  # noqa: E402
-from speech_classes import speech_score, CORE_SPEECH  # noqa: E402  (verification only)
+# this repo's own redaction package, two directories up from scripts/
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, _REPO_ROOT)
+from redaction.redaction_gate import RedactionGate, RedactionGateFailure  # noqa: E402
+from redaction.speech_classes import AMBIGUOUS, CORE_SPEECH, speech_score  # noqa: E402  (verification only)
 
 # LiteRT YAMNet front-end (verified working on this Thor earlier this session)
 from ai_edge_litert.interpreter import Interpreter  # noqa: E402
@@ -84,7 +84,6 @@ def speech_scores_lithert(audio_1d, samplerate, tflite_path=YAMNET_TFLITE,
     Mirrors the notes' public API exactly. Uses the verified YAMNet .tflite
     via ai_edge_litert; no tensorflow_hub, no network.
     """
-    from speech_classes import AMBIGUOUS  # local import; lives in notes-ref
     # Reproduce the notes' _prepare_waveform normalization (downmix + int->float
     # + resample to 16 kHz). The notes use linear interpolation as a first pass.
     audio = np.asarray(audio_1d)
