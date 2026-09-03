@@ -12,8 +12,18 @@ class RedactionGate:
         enter_threshold: float = 0.25,
         exit_threshold: float = 0.15,
         pre_roll_seconds: float = 1.5,
+        # Left at 0.75s: project-sage-notes doc 12 flags this as unexercised
+        # by its evaluation set (LibriSpeech has too few internal pauses to
+        # test the gap-bridging behavior), not validated at this value.
         hangover_seconds: float = 0.75,
-        post_roll_seconds: float = 0.75,
+        # Raised from 0.75s. Doc 12's own post-roll sweep found 2.5s beat
+        # lowering enter_threshold on recall, leak, and false-positive rate
+        # simultaneously; doc 16's literature review found two independent
+        # VAD papers optimizing for the same "protect the trailing edge"
+        # cost function (Lezzoum 2013, 2014) converging on 1.25-1.26s. 1.5s
+        # is the doc 12 tested value closest to that convergence point, not
+        # the doc 12 ceiling of 2.5s.
+        post_roll_seconds: float = 1.5,
         frame_hop: float = 0.48,
         frame_duration: float = 0.96,
         fail_closed: bool = True,

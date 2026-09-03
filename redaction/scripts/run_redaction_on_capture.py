@@ -196,9 +196,13 @@ def main():
         else:
             print(f"  no frames >= {threshold_show:.2f} (max={max(scores):.4f})")
 
-    print("\nRunning RedactionGate (notes-ref defaults: enter=0.25 exit=0.15 "
-          "pre_roll=1.5 hangover=0.75 post_roll=0.75) ...")
     gate = RedactionGate()  # notes' defaults; fail_closed=True by default
+    print(
+        "\nRunning RedactionGate (defaults: "
+        f"enter={gate.enter_threshold} exit={gate.exit_threshold} "
+        f"pre_roll={gate.pre_roll_seconds} hangover={gate.hangover_seconds} "
+        f"post_roll={gate.post_roll_seconds}) ..."
+    )
     try:
         windows = gate.get_redaction_windows(scores)
     except RedactionGateFailure as e:

@@ -12,6 +12,7 @@ Invariant (enforced by this module):
   and NEVER returns a "no redaction" result on an error.
 """
 
+import inspect
 import math
 
 import numpy as np
@@ -19,18 +20,17 @@ import numpy as np
 from .redaction_gate import RedactionGate, RedactionGateFailure
 from .yamnet_speech import RedactionFailure, speech_scores
 
-# Default gate parameters -- the notes-ref design defaults, biased hard toward
-# recall (under-redacting is catastrophic). Overridable via a future CLI flag
-# (not added in this change -- per REDACTION-INTEGRATION-NOTES.md §4 step 7).
-_DEFAULT_GATE = dict(
-    enter_threshold=0.25,
-    exit_threshold=0.15,
-    pre_roll_seconds=1.5,
-    hangover_seconds=0.75,
-    post_roll_seconds=0.75,
-    # frame_hop / frame_duration default to YAMNet's 0.48 / 0.96 inside RedactionGate
-    fail_closed=True,
-)
+# Default gate parameters -- derived from RedactionGate's own constructor
+# defaults so there is exactly one place that defines the shipped config
+# (previously this dict duplicated those values by hand and could drift out
+# of sync with them). Biased hard toward recall (under-redacting is
+# catastrophic). Overridable via a future CLI flag (not added in this change
+# -- per REDACTION-INTEGRATION-NOTES.md §4 step 7).
+_DEFAULT_GATE = {
+    name: param.default
+    for name, param in inspect.signature(RedactionGate.__init__).parameters.items()
+    if name != "self"
+}
 
 # White-noise fill (opt-in via redact_speech(noise_fill=True)). Length of the
 # guard region measured on each side of a window to match the fill level to the
